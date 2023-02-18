@@ -23,7 +23,7 @@ def bus_ordering(element):
 
 def parse_arrival_data(bus_arrival_data: dict):
     result = ""
-    if not(len(bus_arrival_data['Services'])):
+    if not('Services' in bus_arrival_data or len(bus_arrival_data['Services'])):
         return "I can't find this bus service. It is either that you entered the wrong bus station code, or the service might not be operating at this time."
 
     # Sort the bus services as per normal, but those with letterings go right after their counterparts without letters.
@@ -46,9 +46,9 @@ def get_arrivals(station: str, bus: str) -> str:
         
         with open(f"{storage_path}arrival_info/{station}.json", "w+") as f: 
             f.write(json.dumps(bus_arrival_data))
-        
+        print("Success!")
     except Exception as e:
-        return f"Oops! Something went wrong... I guess.\n Debug: {str(e)}"
+        print(str(e))
 
 def query_arrivals(station: str, bus: str) -> dict:
     # Lazily retrieve the arrival information for each service.
@@ -59,12 +59,12 @@ def query_arrivals(station: str, bus: str) -> dict:
         
         # If it's been about 15 seconds since we last updated this list, then retrieve the new list.
         # TODO: Figure out when LTA refreshes their data to be even lazier.
-        if (datetime.datetime.fromisoformat(bus_arrival_data["last_updated"]) -  datetime.datetime.now(tz = sg_timezone)).seconds >= 15: 
-            get_arrivals()
+        if (datetime.datetime.now(tz = sg_timezone) - datetime.datetime.fromisoformat(bus_arrival_data["last_updated"])).seconds >= 15: 
+            get_arrivals(station, bus)
             with open(f"{storage_path}arrival_info/{station}.json", "r") as f: 
                 bus_arrival_data = json.loads(f.read())
     except FileNotFoundError:
-        get_arrivals()
+        get_arrivals(station, bus)
         with open(f"{storage_path}arrival_info/{station}.json", "r") as f: 
             bus_arrival_data = json.loads(f.read())
     finally:
@@ -120,7 +120,7 @@ def query_nearest_bus_stations(location: telebot.types.Location) -> dict:
             bus_station_dict = json.loads(f.read())
 
         # If it's been a day since we last updated this list, then retrieve the new list.
-        if (datetime.datetime.fromisoformat(bus_station_dict["last_updated"]) -  datetime.datetime.now(tz = sg_timezone)).days >= 1: 
+        if (datetime.datetime.now(tz = sg_timezone) - datetime.datetime.fromisoformat(bus_station_dict["last_updated"])).days >= 1: 
             get_all_bus_stations()
             with open(f"{storage_path}bus_station_info.json", "r") as f:
                 bus_station_dict = json.loads(f.read())
