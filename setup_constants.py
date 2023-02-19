@@ -8,8 +8,7 @@ import datetime
 dotenv.load_dotenv()
 BOT_TOKEN = os.getenv("BOT_API_TOKEN")
 LTA_TOKEN = os.getenv("LTA_API_TOKEN")
-storage_path = f"{os.getcwd()}/{os.path.dirname(__file__)}/storage/"
-
+storage_path = f"{os.path.dirname(__file__)}/storage/"
 bot = AsyncTeleBot(BOT_TOKEN, state_storage = StateMemoryStorage())
 bot.add_custom_filter(asyncio_filters.StateFilter(bot))
 

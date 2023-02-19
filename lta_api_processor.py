@@ -43,10 +43,10 @@ def get_arrivals(station: str, bus: str) -> str:
             ("" if bus == "-1" else f"&ServiceNo={bus}")
         r = requests.get(url, headers = headers)
         bus_arrival_data = r.json()
+        bus_arrival_data["last_updated"] = datetime.datetime.isoformat(datetime.datetime.now(tz = sg_timezone))
         
         with open(f"{storage_path}arrival_info/{station}.json", "w+") as f: 
             f.write(json.dumps(bus_arrival_data))
-        print("Success!")
     except Exception as e:
         print(str(e))
 
