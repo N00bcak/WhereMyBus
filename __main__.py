@@ -1,14 +1,16 @@
 from telebot.asyncio_handler_backends import State, StatesGroup
 import asyncio
 import re
-import lta_api_processor
-from setup_constants import bot
+from src import lta_api_processor
+from src.setup_constants import bot
 import datetime
 
+# Handles command states for the /bus command, which allows me to get input from the user via a dialogue.
 class ArrivalCommandStates(StatesGroup):
     station = State()
     bus = State()
 
+# Handles command states for the /alertnextbus command.
 class AlertCommandStates(StatesGroup):
     station = State()
     bus = State()
@@ -16,12 +18,14 @@ class AlertCommandStates(StatesGroup):
 @bot.message_handler(commands = ['start'])
 async def say_hi(message):
     await bot.delete_state(message.from_user.id, message.chat.id)
-    await bot.reply_to(message, f"Hello!\n")
+    await bot.reply_to(message, f"Hello! I'm a bot that can help you get the latest bus timings!\nType /bus to get the bus timings for a certain stop!\nSend me your location to get info on all the bus stations closest to you! (We don't track your data!)")
 
+# The user sent us their location.
 @bot.message_handler(content_types = ['location'])
 async def get_nearest_bus_station_info(message):
     await bot.reply_to(message, lta_api_processor.display_nearest_bus_stations(message.location), parse_mode = "HTML")
 
+# The user is asking about a certain bus
 @bot.message_handler(state = "*", commands='bus')
 async def get_bus_station(message):
     await bot.set_state(message.from_user.id, ArrivalCommandStates.station, message.chat.id)

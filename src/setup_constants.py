@@ -5,10 +5,12 @@ import dotenv
 import os
 import datetime
 
+# This file is responsible for setting up project-wide objects, constants, and reference dictionaries.
+
 dotenv.load_dotenv()
 BOT_TOKEN = os.getenv("BOT_API_TOKEN")
 LTA_TOKEN = os.getenv("LTA_API_TOKEN")
-storage_path = f"{os.path.dirname(__file__)}/storage/"
+storage_path = f"{os.path.dirname(__file__)}/../storage/"
 bot = AsyncTeleBot(BOT_TOKEN, state_storage = StateMemoryStorage())
 bot.add_custom_filter(asyncio_filters.StateFilter(bot))
 
@@ -20,13 +22,15 @@ headers = {
 }
 
 bus_types = {
-    'SD': "Single Decker",
-    'DD': "Double Decker",
+    'SD': "Single",
+    'DD': "Double",
     'BD': "Bendy"
 }
 
+# Given that I am using colored emojis, 
+# TODO: Create an alternative for people with color deficiencies.
 bus_load = {
-    'SEA': "Seats Available",
-    'SDA': "Limited Seats",
-    'LSD': "Almost Full, wait for the next bus!"
+    'SEA': "\U0001f7e9",
+    'SDA': "\U0001f7e8",
+    'LSD': 	"\U0001f7e5"
 }
