@@ -77,7 +77,6 @@ def get_all_bus_operation_times():
         f.write(json.dumps(bus_operation_dict))
 
 def refresh_static_data():
-    return
     get_all_bus_stations()
     get_all_bus_operation_times()
 
