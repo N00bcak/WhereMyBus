@@ -1,9 +1,10 @@
 from telebot.asyncio_handler_backends import State, StatesGroup
 import asyncio
 import re
-from src import lta_api_processor, lta_api_interface, favorites_db
-from src.favorites_db import NoFavoriteStationsException
+from src import lta_api_processor, lta_api_interface, favorites_db, lta_api_utils
+from src.favorites_db import NoFavoriteStationsException, BusStationNotExistsException
 from src.setup_constants import bot
+from telebot.util import quick_markup
 import datetime
 
 async def parse_bus_station_code(message):
@@ -58,14 +59,22 @@ async def give_help(message):
 
     await bot.delete_state(message.from_user.id, message.chat.id)
     await bot.send_chat_action(message.chat.id, 'typing')
-    await bot.reply_to(message, help_message, parse_mode = "HTML")
+    await bot.reply_to(message, help_message, 
+                    parse_mode = "HTML")
 
 # Location was sent.
 
 @bot.message_handler(content_types = ['location'])
 async def arrival_get_nearest_bus_station_info(message):
     await bot.send_chat_action(message.chat.id, 'typing')
-    await bot.reply_to(message, lta_api_processor.display_nearest_bus_stations(message.location), parse_mode = "HTML")
+    refresh_markup = quick_markup({
+        "Refresh": {"callback_data": f"refresh_nearest_arrivals,{message.location}"}
+    })
+    await bot.send_message(message.chat.id, 
+                    lta_api_processor.display_nearest_bus_stations(message.location), 
+                    parse_mode = "HTML", 
+                    reply_markup = refresh_markup 
+                    )
 
 # bus command
 
@@ -77,6 +86,11 @@ async def arrival_get_bus_station(message):
 @bot.message_handler(state = ArrivalCommandStates.station)
 async def arrival_get_bus(message):
     station = await parse_bus_station_code(message)
+
+    if not lta_api_utils.get_station_name(station):
+        await bot.send_message(message.chat.id, "I couldn't find a valid bus station :<")
+        await bot.delete_state(message.from_user.id, message.chat.id)
+        return
 
     await bot.set_state(message.from_user.id, ArrivalCommandStates.bus, message.chat.id)
     # Now we ask them for the bus number, which should be some sequence of digits and maybe a letter at the back. 
@@ -102,7 +116,18 @@ async def arrival_retrieve_info(message):
     # Now we can trigger the process to get arrival timings.
     async with bot.retrieve_data(message.from_user.id, message.chat.id) as data:
         await bot.send_chat_action(message.chat.id, 'typing')
-        await bot.send_message(message.chat.id, lta_api_processor.display_arrivals(data['arrival_station'], bus), parse_mode = "HTML")
+
+        refresh_markup = quick_markup({
+            "Refresh": {"callback_data": f"refresh_display_arrivals,{data['arrival_station']},{bus}"}
+        })
+        text = lta_api_processor.display_arrivals(data['arrival_station'], bus)
+        if not text:
+            text = "I can't find this bus service. Please check that you have not entered the wrong bus station code."
+            refresh_markup = {}
+        await bot.send_message(message.chat.id, text,
+                            parse_mode = "HTML",
+                            reply_markup = refresh_markup
+                            )
         await bot.delete_state(message.from_user.id, message.chat.id)
 
 # add_favorite command
@@ -116,9 +141,13 @@ async def add_favorite_bus_station(message):
     await bot.delete_state(message.from_user.id, message.chat.id)
     await bot.send_chat_action(message.chat.id, 'typing')
     station = await parse_bus_station_code(message)
-    station_name = favorites_db.add_favorite(message.from_user.id, station)
-    await bot.send_message(message.chat.id, f"I've added {station_name} to your list of favorites!")
-
+    try:
+        station_name = favorites_db.add_favorite(message.from_user.id, station)
+        await bot.send_message(message.chat.id, f"I've added {station_name} to your list of favorites!")
+    except BusStationNotExistsException:
+        await bot.send_message(message.chat.id, f"I couldn't find that bus station :<.\nPlease check that you haven't entered the wrong code.")
+    
+    
 # del_favorite command
 @bot.message_handler(commands = ['del_fav','del_favorite', 'delete_fav', 'delete_favorite'])
 async def delete_favorite_get_bus_station(message):
@@ -145,8 +174,12 @@ async def delete_favorite_bus_station(message):
 @bot.message_handler(commands = ['favorites', 'see_fav', 'see_faves', 'show_favorites'])
 async def show_favorite_bus_stations(message):
     await bot.send_chat_action(message.chat.id, 'typing')
+    
     try:
-        await bot.send_message(message.chat.id, favorites_db.get_favorites(message.from_user.id), parse_mode = "HTML")
+        station_list = favorites_db.get_favorites(message.from_user.id)
+        await bot.send_message(message.chat.id, lta_api_processor.display_multiple_station_names(station_list), 
+                            parse_mode = "HTML"
+                            )
     except NoFavoriteStationsException:
         await bot.send_message(message.chat.id, "Hmm, you don't seem to have any favorite bus stations. Use /add_fav to add some!")
 
@@ -155,9 +188,52 @@ async def show_favorite_bus_stations(message):
 async def show_favorite_bus_station_arrivals(message):
     await bot.send_chat_action(message.chat.id, 'typing')
     try:
-        await bot.send_message(message.chat.id, favorites_db.get_favorite_arrivals(message.from_user.id), parse_mode = "HTML")
+        station_list = favorites_db.get_favorites(message.from_user.id)
+        button_dict = {}
+        for station_code in station_list:
+            button_dict[f"{lta_api_utils.get_station_name(station_code)}({station_code})"] = {'callback_data': f"station,{station_code}"}
+        station_markup = quick_markup(button_dict)
+        await bot.send_message(message.chat.id, "Tap on the buttons to get the arrival times for each station!", 
+                            parse_mode = "HTML",
+                            reply_markup = station_markup)
     except NoFavoriteStationsException:
         await bot.send_message(message.chat.id, "Hmm, you don't seem to have any favorite bus stations. Use /add_fav to add some!")
+
+@bot.callback_query_handler(lambda query: "station" in query.data)
+async def print_station(query):
+    message = query.message
+    data = query.data.split(',')
+    station_code = data[1]
+    markup = quick_markup({
+            'Refresh': {'callback_data': f"refresh_display_arrivals,{data[1]},-1"}
+    })
+    await bot.send_message(message.chat.id, lta_api_processor.display_arrivals(data[1], "-1"),
+                        parse_mode = 'HTML',
+                        reply_markup = markup)
+
+
+@bot.callback_query_handler(lambda query: "refresh" in query.data)
+async def refresh_message(query):
+
+    # Unfortunately we have to work around the limitations of Telegram's InlineKeyboardButtons to provide the same querying ability.
+    message = query.message
+    data = query.data.split(',')
+    if data[0] == 'refresh_display_arrivals':
+        text = lta_api_processor.display_arrivals(data[1], data[2])
+        markup = quick_markup({
+            'Refresh': {'callback_data': f"refresh_display_arrivals,{data[1]},{data[2]}"}
+        })
+    elif data[0] == 'refresh_nearest_arrivals':
+        text = lta_api_processor.display_nearest_bus_stations(data[1]),
+        markup = quick_markup({
+            "Refresh": {"callback_data": f"refresh_nearest_arrivals,{data[1]}"}
+        })
+    
+    chat_id = message.chat.id
+    await bot.delete_message(message.chat.id, message.id)
+    await bot.send_message(chat_id, text,
+                            parse_mode = "HTML", 
+                            reply_markup = markup)
 
 async def bot_setup():
     await asyncio.gather(lta_api_interface.query_static_data(),

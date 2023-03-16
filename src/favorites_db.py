@@ -6,6 +6,10 @@ class NoFavoriteStationsException(Exception):
     "You don't seem to have any favorites!"
     pass
 
+class BusStationNotExistsException(Exception):
+    "The requested bus station does not exist!"
+    pass
+
 # This file handles the database work behind the favorites command.
 
 def start_db():
@@ -25,6 +29,10 @@ def add_favorite(user_id: str, station: str):
     db, cur = start_db()
 
     user = cur.execute("SELECT * FROM favorite WHERE id = ?", (user_id,)).fetchone()
+
+    if not lta_api_utils.get_station_name(station):
+        raise BusStationNotExistsException
+
     if not user:
         cur.execute("INSERT INTO favorite (id, station_list) VALUES (?,?)", (user_id, station))
     elif station in user[1]:
@@ -75,6 +83,6 @@ def get_favorites(user_id: str):
         raise NoFavoriteStationsException
     else:
         station_csv = user[1]
-        return lta_api_processor.display_multiple_station_names(station_csv.split(","))
+        return station_csv.split(',')
 
         

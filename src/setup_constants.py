@@ -22,15 +22,16 @@ headers = {
 }
 
 bus_types = {
-    'SD': "Single",
-    'DD': "Double",
-    'BD': "Bendy"
+    'SD': 'Single',
+    'DD': 'Double',
+    'BD': 'Bendy'
 }
 
 # Given that I am using colored emojis, 
 # TODO: Create an alternative for people with color deficiencies.
 bus_load = {
-    'SEA': "\U0001f7e9",
-    'SDA': "\U0001f7e8",
-    'LSD': 	"\U0001f7e5"
+    'SEA': '\U0001f7e9',
+    'SDA': '\U0001f7e8',
+    'LSD': 	'\U0001f7e5'
 }
+

@@ -41,9 +41,9 @@ def get_bus_arrival_status(time1: datetime.datetime) -> str:
     return f"{str(est)} min"
 
 def parse_arrival_data(bus_arrival_data: dict, bus_operation_data: dict, bus: str):
-    result = ""
+    result = f"<b>{utils.get_station_name(bus_arrival_data['BusStopCode'])}</b>\n"
     if bus != "-1" and not(bus in bus_operation_data):
-        return "I can't find this bus service. Please check that you have not entered the wrong bus station code."
+        return None
     services = bus_arrival_data['Services']
     for service_no in sorted(bus_operation_data.keys(), key = utils.bus_ordering):
         service = {}
