@@ -22,8 +22,13 @@ def bus_in_operation(station: str, bus: str):
         print(str(e))
     finally:
         arrival_data = bus_operation_dict["operation_times"][station][bus]
-        first_bus = int(arrival_data[f"{utils.is_weekday(weekday)}_FirstBus"])
-        last_bus = int(arrival_data[f"{utils.is_weekday(weekday)}_LastBus"])
+        # So LTA didn't tell me they would just put dashes for bus timings instead of numbers whenever they pleased...
+        try:
+            first_bus = int(arrival_data[f"{utils.is_weekday(weekday)}_FirstBus"])
+            last_bus = int(arrival_data[f"{utils.is_weekday(weekday)}_LastBus"])
+        except ValueError:
+            return False
+
         if last_bus < first_bus: last_bus += 2400
         return first_bus < hhmm and hhmm < last_bus
 
@@ -41,23 +46,23 @@ def get_bus_arrival_status(time1: datetime.datetime) -> str:
     return f"{str(est)} min"
 
 def parse_arrival_data(bus_arrival_data: dict, bus_operation_data: dict, bus: str):
-    result = f"<b>{utils.get_station_name(bus_arrival_data['BusStopCode'])}</b>\n"
+    result = f"<b>{utils.get_station_name(bus_arrival_data['BusStopCode'])} ({(bus_arrival_data['BusStopCode'])})</b>\n"
     if bus != "-1" and not(bus in bus_operation_data):
         return None
     services = bus_arrival_data['Services']
-    for service_no in sorted(bus_operation_data.keys(), key = utils.bus_ordering):
+    bus_list = bus_operation_data.keys() if bus == "-1" else [service['ServiceNo'] for service in services]
+    for service_no in sorted(bus_list, key = utils.bus_ordering):
         service = {}
         for i in services:
             if i['ServiceNo'] == service_no: 
                 service = i
                 break
-        
-        result += f"<b>Bus No. {service_no}</b>\n"
+        result += f"<b>Bus {service_no}</b>\n"
         
         if not bus_in_operation(bus_arrival_data['BusStopCode'], service_no) or service == {}:
-            result += "This bus is not operational at this moment.\n\n"
+            result += "Currently not operational.\n\n"
             continue
-
+        
         for bus in [service['NextBus'], service['NextBus2'], service['NextBus3']]:
             if not bus['EstimatedArrival']: continue 
             arrival_status = get_bus_arrival_status(datetime.datetime.fromisoformat(bus['EstimatedArrival']))
@@ -107,9 +112,9 @@ def display_multiple_station_names(station_list):
         result = result + f"- {utils.get_station_name(station)} Station (Code: {station})\n"
     return result
 
-def get_closest_bus_stations(location: telebot.types.Location, bus_station_list: dict, k: int = 3):
+def get_closest_bus_stations(lat: float, long: float, bus_station_list: dict, k: int = 3):
     tups = []
-    caller_location = (location.latitude, location.longitude) # (lat, long)
+    caller_location = (lat, long)
     for bus_station in bus_station_list:
         bus_station_coords = (bus_station["Latitude"], bus_station["Longitude"])
         # Calculate the geographical distance with an ellipsoidal model of the earth yadi yada
@@ -119,7 +124,7 @@ def get_closest_bus_stations(location: telebot.types.Location, bus_station_list:
     # Sorts the tuples by the distance and returns the k nearest neighbors.
     return sorted(tups, key = lambda x: x[2])[0:k]
 
-def query_nearest_bus_stations(location: telebot.types.Location) -> dict:
+def query_nearest_bus_stations(lat: float, long: float) -> dict:
     bus_station_dict = {}
     try:
         bus_station_dict = utils.load_from_storage_bus_stations()
@@ -127,13 +132,13 @@ def query_nearest_bus_stations(location: telebot.types.Location) -> dict:
         interface.refresh_static_data()
         bus_station_dict = utils.load_from_storage_bus_stations()
     finally:
-        closest_neighbors = get_closest_bus_stations(location, bus_station_dict["bus_stops"])
+        closest_neighbors = get_closest_bus_stations(lat, long, bus_station_dict["bus_stops"])
         return closest_neighbors
 
-def display_nearest_bus_stations(location: telebot.types.Location):
-    closest_neighbors = query_nearest_bus_stations(location)
+def display_nearest_bus_stations(lat: float, long: float):
+    closest_neighbors = query_nearest_bus_stations(lat, long)
     result = f"Here is the arrival info of the nearest bus stations to you: \n\n{'=' * 20}\n\n"
     for neighbor_code, neighbor_name, dist in closest_neighbors:
         result = result + f"{neighbor_name} Station ({round(dist)}m away):\n{display_arrivals(neighbor_code, '-1')}{'=' * 20}\n\n"
-    
+
     return result

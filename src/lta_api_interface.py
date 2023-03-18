@@ -68,7 +68,7 @@ def get_all_bus_operation_times():
     query_count = 0
     while("value" not in resp.keys() or len(resp["value"])):
         resp = request_bus_routes(query_count * 500)
-        for svc in resp["value"]: 
+        for svc in resp["value"]:
             bus_operation_dict["operation_times"][svc["BusStopCode"]][svc["ServiceNo"]] = svc
         query_count += 1
 
@@ -87,7 +87,7 @@ async def query_static_data():
     while True:
         # TODO: Devise a way to integrate both get_all_bus_stations and get_all_bus_operation_times without too much clutter.
         print("Refreshing bus network information...")
-        #refresh_static_data()
+        refresh_static_data()
         print("Done!")
         
         tmwdatetime = datetime.datetime.combine(datetime.date.today() + datetime.timedelta(days = 1), datetime.time())

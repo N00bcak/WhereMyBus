@@ -38,7 +38,12 @@ def add_favorite(user_id: str, station: str):
     elif station in user[1]:
         pass
     else:
-        station_csv = f"{user[1]}{',' if len(user[1]) else ''}{station}"
+        # Sorting the station IDs as a QoL feature...
+        stations = user[1].split(',')
+        stations.append(station)
+        # Better than sorted(). I think. I am NOT writing list(sorted(stations)).
+        stations.sort()
+        station_csv = ','.join(stations)
         cur.execute("UPDATE favorite SET station_list = ? WHERE id = ?", (station_csv, user_id))
     
     db.commit()
@@ -52,9 +57,12 @@ def delete_favorite(user_id: str, station: str):
     if not(user and len(user[1])):
         raise NoFavoriteStationsException
     else:
-        station_csv = user[1]
-        station_csv = station_csv.replace(station, "").replace(",,", ",")
-        if len(station_csv) and station_csv[-1] == ",": station_csv = station_csv[:-1]
+        # Sorting the station IDs as a QoL feature...
+        stations = user[1].split(',')
+        stations.remove(station)
+        # Better than sorted(). I think. I am NOT writing list(sorted(stations)).
+        stations.sort()
+        station_csv = ','.join(stations)
         cur.execute("UPDATE favorite SET station_list = ? WHERE id = ?", (station_csv, user_id))
     db.commit()
     db.close()
@@ -84,5 +92,3 @@ def get_favorites(user_id: str):
     else:
         station_csv = user[1]
         return station_csv.split(',')
-
-        

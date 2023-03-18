@@ -4,7 +4,7 @@ import re
 from src import lta_api_processor, lta_api_interface, favorites_db, lta_api_utils
 from src.favorites_db import NoFavoriteStationsException, BusStationNotExistsException
 from src.setup_constants import bot
-from telebot.util import quick_markup
+from telebot.util import quick_markup, smart_split
 import datetime
 
 async def parse_bus_station_code(message):
@@ -68,13 +68,18 @@ async def give_help(message):
 async def arrival_get_nearest_bus_station_info(message):
     await bot.send_chat_action(message.chat.id, 'typing')
     refresh_markup = quick_markup({
-        "Refresh": {"callback_data": f"refresh_nearest_arrivals,{message.location}"}
+        "Refresh": {"callback_data": f"refresh_nearest_arrivals|{message.location.latitude}|{message.location.longitude}"}
     })
-    await bot.send_message(message.chat.id, 
-                    lta_api_processor.display_nearest_bus_stations(message.location), 
-                    parse_mode = "HTML", 
-                    reply_markup = refresh_markup 
-                    )
+
+    # Because we CAN in fact exceed TG's message character limit, we are splitting the messages up...
+    result = lta_api_processor.display_nearest_bus_stations(message.location.latitude, message.location.longitude)
+    parts = smart_split(result)
+    for i in range(len(parts)):
+        await bot.send_message(message.chat.id,
+                        parts[i],
+                        parse_mode = "HTML",
+                        reply_markup = refresh_markup if i == len(parts) - 1 else None
+                        )
 
 # bus command
 
@@ -118,12 +123,17 @@ async def arrival_retrieve_info(message):
         await bot.send_chat_action(message.chat.id, 'typing')
 
         refresh_markup = quick_markup({
-            "Refresh": {"callback_data": f"refresh_display_arrivals,{data['arrival_station']},{bus}"}
+            "Refresh": {"callback_data": f"refresh_display_arrivals|{data['arrival_station']}|{bus}"}
         })
         text = lta_api_processor.display_arrivals(data['arrival_station'], bus)
         if not text:
             text = "I can't find this bus service. Please check that you have not entered the wrong bus station code."
             refresh_markup = {}
+
+        # TODO: If it ever becomes apparent that there can be enough services 
+        # in a bus station to exceed Telegram's hard limit of 4096 characters per message,
+        # split the text up with smart_split.
+        # For now we will KIV in the case of *individual* stations.
         await bot.send_message(message.chat.id, text,
                             parse_mode = "HTML",
                             reply_markup = refresh_markup
@@ -149,7 +159,7 @@ async def add_favorite_bus_station(message):
     
     
 # del_favorite command
-@bot.message_handler(commands = ['del_fav','del_favorite', 'delete_fav', 'delete_favorite'])
+@bot.message_handler(commands = ['del_fav', 'del_favorite', 'delete_fav', 'delete_favorite'])
 async def delete_favorite_get_bus_station(message):
     await bot.set_state(message.from_user.id, FavoriteCommandStates.delete, message.chat.id)
     try:
@@ -191,8 +201,8 @@ async def show_favorite_bus_station_arrivals(message):
         station_list = favorites_db.get_favorites(message.from_user.id)
         button_dict = {}
         for station_code in station_list:
-            button_dict[f"{lta_api_utils.get_station_name(station_code)}({station_code})"] = {'callback_data': f"station,{station_code}"}
-        station_markup = quick_markup(button_dict)
+            button_dict[f"{lta_api_utils.get_station_name(station_code)}({station_code})"] = {'callback_data': f"station|{station_code}"}
+        station_markup = quick_markup(button_dict, row_width = 1)
         await bot.send_message(message.chat.id, "Tap on the buttons to get the arrival times for each station!", 
                             parse_mode = "HTML",
                             reply_markup = station_markup)
@@ -205,7 +215,7 @@ async def print_station(query):
     data = query.data.split(',')
     station_code = data[1]
     markup = quick_markup({
-            'Refresh': {'callback_data': f"refresh_display_arrivals,{data[1]},-1"}
+            'Refresh': {'callback_data': f"refresh_display_arrivals|{data[1]}|-1"}
     })
     await bot.send_message(message.chat.id, lta_api_processor.display_arrivals(data[1], "-1"),
                         parse_mode = 'HTML',
@@ -217,23 +227,31 @@ async def refresh_message(query):
 
     # Unfortunately we have to work around the limitations of Telegram's InlineKeyboardButtons to provide the same querying ability.
     message = query.message
-    data = query.data.split(',')
+    data = query.data.split('|')
+    chat_id = message.chat.id
+    await bot.delete_message(message.chat.id, message.id)
     if data[0] == 'refresh_display_arrivals':
         text = lta_api_processor.display_arrivals(data[1], data[2])
         markup = quick_markup({
-            'Refresh': {'callback_data': f"refresh_display_arrivals,{data[1]},{data[2]}"}
+            'Refresh': {'callback_data': f"refresh_display_arrivals|{data[1]}|{data[2]}"}
         })
+        await bot.send_message(chat_id, text,
+                                parse_mode = "HTML", 
+                                reply_markup = markup)
     elif data[0] == 'refresh_nearest_arrivals':
-        text = lta_api_processor.display_nearest_bus_stations(data[1]),
+        # Despite having nearly identical code to that of arrival_get_nearest_bus_station_info, the smart_split function returns a tuple instead of a string here.
+        # TODO: Get to the root of this issue.
+        text = lta_api_processor.display_nearest_bus_stations(float(data[1]), float(data[2])),
         markup = quick_markup({
-            "Refresh": {"callback_data": f"refresh_nearest_arrivals,{data[1]}"}
+            "Refresh": {"callback_data": f"refresh_nearest_arrivals|{data[1]}|{data[2]}"}
         })
-    
-    chat_id = message.chat.id
-    await bot.delete_message(message.chat.id, message.id)
-    await bot.send_message(chat_id, text,
-                            parse_mode = "HTML", 
-                            reply_markup = markup)
+        parts = smart_split(text)
+        for i in range(len(parts)):
+            await bot.send_message(message.chat.id,
+                            parts[i][0],
+                            parse_mode = "HTML",
+                            reply_markup = markup if i == len(parts) - 1 else None
+                            )
 
 async def bot_setup():
     await asyncio.gather(lta_api_interface.query_static_data(),
